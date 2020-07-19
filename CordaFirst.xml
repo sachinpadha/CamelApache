@@ -1,0 +1,158 @@
+ <beans xmlns="http://www.springframework.org/schema/beans"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="
+       http://www.springframework.org/schema/beans 
+       http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://camel.apache.org/schema/spring 
+       http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	 <bean id="sqlComponent" class="org.apache.camel.component.sql.SqlComponent"> 
+		<property name="dataSource" ref="dataSource" /> </bean> 
+	<bean id="parser"
+		class="oracle.PocGradle.flexcube.lc.PocOffshore.PocOffshore" />
+
+	<bean id="myExtLogs" class="org.slf4j.LoggerFactory"
+		factory-method="getLogger"
+		xmlns="http://www.springframework.org/schema/beans">
+		<constructor-arg value="myExtLogs" />
+	</bean>
+
+
+	<!-- <bean id="jmsJndiTemplate"
+		class="org.springframework.jndi.JndiTemplate">
+		<property name="environment">
+			<props>
+				<prop key="java.naming.factory.initial">weblogic.jndi.WLInitialContextFactory</prop>
+				<prop key="java.naming.provider.url">t3://10.40.137.130:8002</prop>
+			</props>
+		</property>
+	</bean>
+	<bean id="jndiDestinationResolver"
+		class="org.springframework.jms.support.destination.JndiDestinationResolver">
+		<property name="jndiTemplate" ref="jmsJndiTemplate" />
+	</bean>
+
+	<bean id="jmsConnectionFactory"
+		class="org.springframework.jndi.JndiObjectFactoryBean">
+		<property name="jndiTemplate" ref="jmsJndiTemplate" />
+		<property name="jndiName"
+			value="jms/TestGradleConnectionFactory" />
+	</bean>
+	<bean id="jmsConfiguration"
+		class="org.apache.camel.component.jms.JmsConfiguration">
+		<property name="connectionFactory" ref="jmsConnectionFactory" />
+		<property name="destinationResolver"
+			ref="jndiDestinationResolver" />
+	</bean>
+
+	<bean id="weblogicJMS"
+		class="org.apache.camel.component.jms.JmsComponent">
+		<property name="configuration" ref="jmsConfiguration" />
+	</bean> -->
+	
+	<camelContext
+		xmlns="http://camel.apache.org/schema/spring">
+		<propertyPlaceholder id="placeholder"
+			location="classpath:SQLConfigTest.properties" />
+		<routeContextRef ref="myExtCamelContext" />
+		<restConfiguration bindingMode="json"
+			component="servlet" />
+		<rest path="/rest">
+			<post uri="/P7In/NotifySenderEndPoint"
+				consumes="application/json" produces="application/json">
+				<to uri="direct:P7Request" />
+			</post>
+		</rest>
+	</camelContext>
+	<routeContext id="myExtCamelContext" xmlns="http://camel.apache.org/schema/spring">
+		<!-- <route id="P6: Reading from Queue">
+			<from uri="weblogicJMS:jms/TestIncomingGradle" />
+			<log message="${body}" />
+		<to uri="sql-stored:TestFunc(VARCHAR ${body}, OUT VARCHAR OutBody)" />
+		<log message="${body}" />
+		<setBody> <simple> "Entered in Route Id: ${routeId}"\n </simple> </setBody>
+		</route> -->
+		
+		<route id="P3: Reading from File">
+			<!-- <from uri="file:/scratch/TestLog/?fileName=MyFile.txt" /> -->
+			<from uri="file:C:/D_Drive/GradlePOCOffshore/File?fileName=MyFile.txt" />
+			<log message="${body}" />
+		<to uri="sql-stored:TestFunc(VARCHAR ${body}, OUT VARCHAR OutBody)" />
+		<convertBodyTo type="String" />
+		<log message="${body}" />
+		<setBody> <simple> "Entered in Route Id: ${routeId}"\n </simple> </setBody>
+		</route>
+		
+		<route id="P10: Reading from File and sending to Java Function">
+			<!-- <from uri="file:/scratch/TestLog/?fileName=MyFileJava.txt" /> -->
+			<from uri="file:C:/D_Drive/GradlePOCOffshore/File?fileName=MyFileJava.txt" />
+			<log message="${body}" />
+		<transform>
+				<method ref="parser" method="processVar" />
+		</transform>
+		<log message="${body}" />
+		 <to uri="file:C:\D_Drive\GradlePOCOffshore\File?fileName=OutFileJava.txt&amp;fileExist=Append" />
+		<setBody> <simple> "Exited from Route Id: ${routeId}"\n </simple> </setBody>
+		<!-- <to uri="file:C:\D_Drive\GradlePOCOffshore\File?fileName=OutFileJava.txt&amp;fileExist=Append" /> -->
+		</route>
+		
+		<route
+			id="P7: Testing Incoming RestService and Sending to Queue">
+			<from uri="direct:P7Request" />
+			<log message="${body}" />
+			<!-- <setBody><simple>{"status":"OK"}</simple></setBody> -->
+			<log message="Body Message 1:" />
+			<log message="Status OK:" />
+			<!-- <to uri="sqlComponent:{{sql.updateQueryP7}}" /> 
+			<to uri="sqlComponent:{{sql.commitSql}}" /> -->
+			<transform>
+				<method ref="parser" method="parseFCUBS" />
+			</transform>
+			<log message="Inside Template" />
+			<to uri="freemarker:CordaTemplateFCUBS.ftl" />
+
+			<log message="${body}" />
+			<setProperty propertyName="foo">
+				<simple>${body}</simple>
+			</setProperty>
+			<setBody>
+				<simple>${property.foo}</simple>
+			</setBody>
+			<transform>
+				<method ref="parser" method="stringToMap" />
+			</transform>
+			<transform>
+				<method ref="parser" method="mapToString" />
+			</transform>
+			<!--<convertBodyTo type="java.lang.Object"></convertBodyTo> -->
+			<!-- <setBody><simple>{"status":"OK"}</simple></setBody> -->
+<!-- 			<inOnly uri="weblogicJMS:jms/TestGradle" /> -->
+			<onException>
+				<exception>java.lang.Exception</exception>
+				<log message="Inside Exception:" />
+				<log message="#########################################" />
+				<log
+					message="Transaction Failed in ${routeId} because Exception : ${exception.message} and stack trace : ${messageHistory}" />
+				<log message="${date:now}" />
+				<setBody>
+					<simple>	<!-- "routeid":"${routeId}","CamelId":"${camelId}", "stackTrace":"${messageHistory} " -->
+		 				{"exception_time":"${date:now:yyyy-MM-dd HH:mm:ss}", "exception_message": "${exception.message}", "payload":"${body}","camel_route_id": "${routeId}"}
+		 			</simple>
+				</setBody>
+				<setProperty propertyName="propExceptionRestService">
+					<simple>${body}</simple>
+				</setProperty>
+				<log message="${body}" />
+			</onException>
+		</route>
+		<route id="Pooling From Table"> 
+			<from uri="sqlComponent:{{sql.selectUserDummy}}" /> 
+			<setBody> <simple> "Entered in Route Id: ${routeId}"\n </simple> </setBody> 
+			<log message="${body}" /> 
+			<!-- <to uri="file:D:\out?fileName=MyFile.txt&amp;fileExist=Append"/> -->
+			<setBody> <simple> "Exiting from Route Id: ${routeId}" </simple> </setBody> 
+			<!--<to uri="file:D:\out?fileName=MyFile.txt&amp;fileExist=Append"/> -->
+		</route>
+	</routeContext>
+
+</beans>
